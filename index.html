@@ -363,7 +363,7 @@
         अब बज रहा है • स्क्रॉल संगीत
       </p>
       <p id="currentTrackTitle" class="text-xs sm:text-sm font-hindiDisplay text-charcoal truncate font-medium">
-        १. राग यमन (सितार व तानपुरा)
+        १. मंगलाचरण गीत (Song 1)
       </p>
     </div>
 
@@ -1036,270 +1036,127 @@
       }
 
       /* -------------------------------------------------------------------
-         2. SCROLL-REACTIVE 4-MOVEMENT INDIAN WEDDING MUSIC SYNTHESIZER
-            Changes melody smoothly as the guest scrolls through sections:
-            0: Raga Yaman (Sitar & Tanpura) - Sacred Invocation & Couple
-            1: Joyful Haldi & Sangeet Folk (Santoor & Dholak) - Ceremonies
-            2: Romantic Raag Pahadi (Bansuri Flute) - Venue & Countdown
-            3: Mangalam Vidaai & Shehnai Blessing - Family & Warm Regards
+         2. SCROLL-REACTIVE 4-TRACK MP3 AUDIO CROSSFADER
+            Smoothly crossfades (~800ms volume ramp) between local MP3s
+            (./song1.mp3, ./song2.mp3, ./song3.mp3, ./song4.mp3) as the
+            guest scrolls through the 4 invitation chapters.
       ------------------------------------------------------------------- */
-      class ScrollReactiveWeddingAudio {
+      class ScrollReactiveMP3Player {
         constructor() {
-          this.ctx = null;
           this.isPlaying = false;
-          this.masterGain = null;
-          this.trackGain = null;
-          this.droneOscs = [];
-          this.noteTimer = null;
-          this.step = 0;
           this.currentTrackIndex = 0;
           this.manualOverride = false;
           this.overrideTimer = null;
+          this.maxVolume = 0.85;
+          this.fadeTimers = new Map();
 
-          // Base frequencies (Sa4 = D4 ~ 293.66 Hz)
-          const Sa = 293.66;
-          this.notes = {
-            Pa3: Sa * (3 / 4),
-            Dha3: Sa * (27 / 32),
-            Ni3: Sa * (15 / 16),
-            Sa4: Sa,
-            Re4: Sa * (9 / 8),
-            Ga4: Sa * (5 / 4),
-            Ma4: Sa * (45 / 32),      // Tivra Ma (Raga Yaman)
-            MaSudh4: Sa * (4 / 3),   // Shuddha Ma (Raag Pahadi / Folk)
-            Pa4: Sa * (3 / 2),
-            Dha4: Sa * (27 / 16),
-            Ni4: Sa * (15 / 8),
-            Sa5: Sa * 2,
-            Re5: Sa * (9 / 4),
-          };
-
-          // 4 Distinct Musical Tracks mapped to the 4 invitation chapters
           this.tracks = [
             {
               id: 0,
-              titleHi: '१. राग यमन (सितार व तानपुरा)',
-              titleEn: '1. Raga Yaman (Sitar & Tanpura)',
-              timbre: 'sitar',
-              tempoMs: 650,
-              droneSa: Sa / 2,
-              phrase: [
-                { n: 'Ni3', d: 0.7 }, { n: 'Re4', d: 0.7 }, { n: 'Ga4', d: 0.9 },
-                { n: 'Ma4', d: 0.5 }, { n: 'Pa4', d: 1.2 }, { n: null, d: 0.35 },
-                { n: 'Ma4', d: 0.5 }, { n: 'Dha4', d: 0.7 }, { n: 'Ni4', d: 0.8 },
-                { n: 'Sa5', d: 1.3 }, { n: 'Ni4', d: 0.6 }, { n: 'Dha4', d: 0.6 },
-                { n: 'Pa4', d: 0.9 }, { n: 'Ga4', d: 0.7 }, { n: 'Re4', d: 0.7 },
-                { n: 'Sa4', d: 1.4 }, { n: null, d: 0.6 },
-              ],
+              src: './song1.mp3',
+              titleHi: '१. मंगलाचरण गीत (Song 1)',
+              titleEn: '1. Sacred Invocation (Song 1)',
             },
             {
               id: 1,
-              titleHi: '२. हल्दी व संगीत लोकधुन (संतूर)',
-              titleEn: '2. Haldi & Sangeet Folk (Santoor)',
-              timbre: 'santoor',
-              tempoMs: 410,
-              droneSa: Sa / 2,
-              phrase: [
-                { n: 'Sa4', d: 0.5, perc: true }, { n: 'Re4', d: 0.5 }, { n: 'Ga4', d: 0.5, perc: true },
-                { n: 'Pa4', d: 0.7 }, { n: 'Ga4', d: 0.5, perc: true }, { n: 'Pa4', d: 0.5 },
-                { n: 'Dha4', d: 0.7, perc: true }, { n: 'Sa5', d: 0.8 }, { n: 'Dha4', d: 0.5, perc: true },
-                { n: 'Pa4', d: 0.5 }, { n: 'Ga4', d: 0.5, perc: true }, { n: 'Re4', d: 0.5 },
-                { n: 'Ga4', d: 0.6, perc: true }, { n: 'Re4', d: 0.5 }, { n: 'Sa4', d: 0.9, perc: true },
-                { n: null, d: 0.4 },
-              ],
+              src: './song2.mp3',
+              titleHi: '२. संस्कार एवं उत्सव (Song 2)',
+              titleEn: '2. Wedding Ceremonies (Song 2)',
             },
             {
               id: 2,
-              titleHi: '३. राग पहाड़ी (मधुर बांसुरी)',
-              titleEn: '3. Raag Pahadi (Bansuri Flute)',
-              timbre: 'flute',
-              tempoMs: 680,
-              droneSa: Sa / 2,
-              phrase: [
-                { n: 'Sa4', d: 0.9 }, { n: 'Re4', d: 0.7 }, { n: 'Ga4', d: 1.0 },
-                { n: 'Pa4', d: 1.1 }, { n: 'Dha4', d: 0.8 }, { n: 'Pa4', d: 0.7 },
-                { n: 'Ga4', d: 0.9 }, { n: 'Re4', d: 0.6 }, { n: 'Sa4', d: 0.8 },
-                { n: 'Dha3', d: 0.8 }, { n: 'Pa3', d: 1.0 }, { n: 'Dha3', d: 0.7 },
-                { n: 'Sa4', d: 1.4 }, { n: null, d: 0.6 },
-              ],
+              src: './song3.mp3',
+              titleHi: '३. शुभ लग्न वेला (Song 3)',
+              titleEn: '3. Venue & Countdown (Song 3)',
             },
             {
               id: 3,
-              titleHi: '४. मंगलम शहनाई आशीर्वाद',
-              titleEn: '4. Mangalam Shehnai Blessing',
-              timbre: 'shehnai',
-              tempoMs: 640,
-              droneSa: Sa / 2,
-              phrase: [
-                { n: 'Pa4', d: 0.8 }, { n: 'Dha4', d: 0.7 }, { n: 'Sa5', d: 1.2 },
-                { n: 'Re5', d: 0.8 }, { n: 'Sa5', d: 0.8 }, { n: 'Ni4', d: 0.7 },
-                { n: 'Dha4', d: 0.9 }, { n: 'Pa4', d: 1.1 }, { n: 'MaSudh4', d: 0.6 },
-                { n: 'Ga4', d: 0.8 }, { n: 'Re4', d: 0.8 }, { n: 'Sa4', d: 1.5 },
-                { n: null, d: 0.7 },
-              ],
+              src: './song4.mp3',
+              titleHi: '४. स्नेहिल आमंत्रण (Song 4)',
+              titleEn: '4. Family & Blessings (Song 4)',
             },
           ];
-        }
 
-        initContext() {
-          if (!this.ctx) {
-            const AudioCtx = window.AudioContext || window.webkitAudioContext;
-            this.ctx = new AudioCtx();
-            this.masterGain = this.ctx.createGain();
-            this.masterGain.gain.value = 0.22;
-            this.masterGain.connect(this.ctx.destination);
+          // Pre-create HTML5 <audio> elements with loop & preload="auto"
+          this.audioElements = this.tracks.map((track) => {
+            const audio = new Audio(track.src);
+            audio.loop = true;
+            audio.preload = 'auto';
+            audio.volume = 0;
+            audio.dataset.missing = 'false';
 
-            this.trackGain = this.ctx.createGain();
-            this.trackGain.gain.value = 1.0;
-            this.trackGain.connect(this.masterGain);
-          }
-          if (this.ctx.state === 'suspended') {
-            this.ctx.resume();
-          }
-        }
+            // Graceful fallback if an MP3 hasn't been uploaded to GitHub yet
+            audio.addEventListener('error', () => {
+              audio.dataset.missing = 'true';
+              console.warn(`Audio file not found yet: ${track.src}`);
+            });
 
-        startTanpuraDrone(baseSa) {
-          this.stopTanpuraDrone();
-          const freqs = [baseSa, baseSa * 1.5, baseSa * 2];
-          freqs.forEach((f, idx) => {
-            const osc = this.ctx.createOscillator();
-            const filter = this.ctx.createBiquadFilter();
-            const gain = this.ctx.createGain();
-
-            osc.type = idx === 1 ? 'sine' : 'triangle';
-            osc.frequency.value = f;
-            filter.type = 'lowpass';
-            filter.frequency.value = 380;
-            gain.gain.value = idx === 0 ? 0.11 : 0.05;
-
-            osc.connect(filter);
-            filter.connect(gain);
-            gain.connect(this.masterGain);
-            osc.start();
-            this.droneOscs.push(osc);
+            return audio;
           });
         }
 
-        stopTanpuraDrone() {
-          this.droneOscs.forEach((osc) => {
-            try {
-              osc.stop();
-              osc.disconnect();
-            } catch (e) {}
-          });
-          this.droneOscs = [];
-        }
-
-        playDholakPulse(now) {
-          // Soft warm tabla/dholak bass tap for Haldi & Sangeet section
-          const osc = this.ctx.createOscillator();
-          const gain = this.ctx.createGain();
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(145, now);
-          osc.frequency.exponentialRampToValueAtTime(68, now + 0.14);
-
-          gain.gain.setValueAtTime(0.16, now);
-          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
-
-          osc.connect(gain);
-          gain.connect(this.trackGain);
-          osc.start(now);
-          osc.stop(now + 0.2);
-        }
-
-        playNote(freq, duration, timbre, withPerc) {
-          if (!this.ctx || !this.isPlaying) return;
-          const now = this.ctx.currentTime;
-
-          if (withPerc) {
-            this.playDholakPulse(now);
-          }
-          if (!freq) return;
-
-          const osc1 = this.ctx.createOscillator();
-          const osc2 = this.ctx.createOscillator();
-          const filter = this.ctx.createBiquadFilter();
-          const noteGain = this.ctx.createGain();
-
-          if (timbre === 'sitar') {
-            osc1.type = 'sawtooth';
-            osc2.type = 'triangle';
-            osc1.frequency.setValueAtTime(freq, now);
-            osc2.frequency.setValueAtTime(freq * 2, now);
-            osc1.frequency.exponentialRampToValueAtTime(freq * 1.004, now + duration * 0.5);
-            filter.type = 'bandpass';
-            filter.frequency.value = freq * 2.4;
-            filter.Q.value = 2.2;
-            noteGain.gain.setValueAtTime(0.001, now);
-            noteGain.gain.linearRampToValueAtTime(0.2, now + 0.06);
-            noteGain.gain.exponentialRampToValueAtTime(0.001, now + duration + 0.35);
-          } else if (timbre === 'santoor') {
-            // Bright plucked hammer shimmer
-            osc1.type = 'triangle';
-            osc2.type = 'sine';
-            osc1.frequency.setValueAtTime(freq, now);
-            osc2.frequency.setValueAtTime(freq * 2, now);
-            filter.type = 'lowpass';
-            filter.frequency.value = freq * 4;
-            noteGain.gain.setValueAtTime(0.001, now);
-            noteGain.gain.linearRampToValueAtTime(0.24, now + 0.02);
-            noteGain.gain.exponentialRampToValueAtTime(0.001, now + duration + 0.28);
-          } else if (timbre === 'flute') {
-            // Airy, warm Bansuri flute
-            osc1.type = 'sine';
-            osc2.type = 'triangle';
-            osc1.frequency.setValueAtTime(freq * 0.996, now);
-            osc1.frequency.linearRampToValueAtTime(freq, now + 0.14);
-            osc2.frequency.setValueAtTime(freq * 2, now);
-            filter.type = 'lowpass';
-            filter.frequency.value = freq * 2.1;
-            noteGain.gain.setValueAtTime(0.001, now);
-            noteGain.gain.linearRampToValueAtTime(0.23, now + 0.16);
-            noteGain.gain.exponentialRampToValueAtTime(0.001, now + duration + 0.3);
-          } else {
-            // Warm Shehnai blessing
-            osc1.type = 'sawtooth';
-            osc2.type = 'sine';
-            osc1.frequency.setValueAtTime(freq, now);
-            osc2.frequency.setValueAtTime(freq * 2, now);
-            filter.type = 'bandpass';
-            filter.frequency.value = freq * 2.0;
-            filter.Q.value = 2.0;
-            noteGain.gain.setValueAtTime(0.001, now);
-            noteGain.gain.linearRampToValueAtTime(0.2, now + 0.12);
-            noteGain.gain.exponentialRampToValueAtTime(0.001, now + duration + 0.3);
+        // Smooth 800ms volume ramp for any <audio> element
+        fadeVolume(audio, targetVolume, durationMs = 800, pauseOnComplete = false) {
+          if (!audio) return;
+          if (this.fadeTimers.has(audio)) {
+            clearInterval(this.fadeTimers.get(audio));
+            this.fadeTimers.delete(audio);
           }
 
-          const osc2Gain = this.ctx.createGain();
-          osc2Gain.gain.value = timbre === 'flute' ? 0.04 : 0.09;
+          const startVolume = audio.volume;
+          const delta = targetVolume - startVolume;
+          if (Math.abs(delta) < 0.01) {
+            audio.volume = Math.max(0, Math.min(1, targetVolume));
+            if (pauseOnComplete && targetVolume === 0) {
+              audio.pause();
+            }
+            return;
+          }
 
-          osc1.connect(filter);
-          osc2.connect(osc2Gain);
-          osc2Gain.connect(filter);
-          filter.connect(noteGain);
-          noteGain.connect(this.trackGain);
+          const stepMs = 40;
+          const totalSteps = Math.max(1, Math.round(durationMs / stepMs));
+          let currentStep = 0;
 
-          osc1.start(now);
-          osc2.start(now);
-          osc1.stop(now + duration + 0.4);
-          osc2.stop(now + duration + 0.4);
+          const timer = setInterval(() => {
+            currentStep++;
+            const progress = Math.min(1, currentStep / totalSteps);
+            const nextVol = startVolume + delta * progress;
+            audio.volume = Math.max(0, Math.min(1, nextVol));
+
+            if (progress >= 1) {
+              clearInterval(timer);
+              this.fadeTimers.delete(audio);
+              if (pauseOnComplete && targetVolume === 0) {
+                audio.pause();
+              }
+            }
+          }, stepMs);
+
+          this.fadeTimers.set(audio, timer);
         }
 
-        scheduleNext() {
-          if (!this.isPlaying) return;
-          const track = this.tracks[this.currentTrackIndex];
-          const item = track.phrase[this.step % track.phrase.length];
-          this.step++;
+        async playAudioSafely(audio, trackIndex) {
+          if (!audio) return false;
+          if (audio.dataset.missing === 'true') {
+            showToast(
+              currentLang === 'hi'
+                ? `${this.tracks[trackIndex].src} फ़ाइल नहीं मिली — कृपया GitHub पर अपलोड करें`
+                : `Missing ${this.tracks[trackIndex].src} — please upload it to your repo`,
+              '⚠️'
+            );
+            return false;
+          }
 
-          const freq = item.n ? this.notes[item.n] : null;
-          this.playNote(freq, item.d, track.timbre, Boolean(item.perc));
-
-          this.noteTimer = setTimeout(() => {
-            this.scheduleNext();
-          }, item.d * track.tempoMs);
+          try {
+            await audio.play();
+            return true;
+          } catch (err) {
+            console.warn('Playback waiting for user gesture or valid MP3:', err);
+            return false;
+          }
         }
 
-        switchTrack(newIndex, isManual = false) {
+        async switchTrack(newIndex, isManual = false) {
           if (newIndex < 0) newIndex = this.tracks.length - 1;
           if (newIndex >= this.tracks.length) newIndex = 0;
 
@@ -1314,41 +1171,45 @@
           }
 
           if (this.currentTrackIndex === newIndex) return;
+
+          const prevAudio = this.audioElements[this.currentTrackIndex];
+          const nextAudio = this.audioElements[newIndex];
+
           this.currentTrackIndex = newIndex;
-          this.step = 0;
           updateTrackTitleUI();
 
-          if (this.ctx && this.isPlaying && this.trackGain) {
-            // Smooth audio crossfade transition
-            const now = this.ctx.currentTime;
-            this.trackGain.gain.cancelScheduledValues(now);
-            this.trackGain.gain.setValueAtTime(this.trackGain.gain.value, now);
-            this.trackGain.gain.linearRampToValueAtTime(0.05, now + 0.28);
-            setTimeout(() => {
-              if (!this.ctx || !this.isPlaying) return;
-              const t = this.ctx.currentTime;
-              this.trackGain.gain.linearRampToValueAtTime(1.0, t + 0.35);
-            }, 300);
+          if (!this.isPlaying) return;
+
+          // Fade out previous song over 800ms
+          this.fadeVolume(prevAudio, 0, 800, true);
+
+          // Start and fade in new song over 800ms
+          nextAudio.volume = 0;
+          const started = await this.playAudioSafely(nextAudio, newIndex);
+          if (started) {
+            this.fadeVolume(nextAudio, this.maxVolume, 800, false);
           }
         }
 
-        start() {
-          try {
-            this.initContext();
-            if (this.isPlaying) return;
+        async start() {
+          const activeAudio = this.audioElements[this.currentTrackIndex];
+          activeAudio.volume = 0;
+          const started = await this.playAudioSafely(activeAudio, this.currentTrackIndex);
+          if (started) {
             this.isPlaying = true;
-            this.startTanpuraDrone(this.tracks[this.currentTrackIndex].droneSa);
-            this.scheduleNext();
+            this.fadeVolume(activeAudio, this.maxVolume, 800, false);
             updateMusicUI(true);
-          } catch (e) {
-            console.warn('Audio waiting for interaction:', e);
+          } else {
+            this.isPlaying = false;
+            updateMusicUI(false);
           }
         }
 
         stop() {
           this.isPlaying = false;
-          clearTimeout(this.noteTimer);
-          this.stopTanpuraDrone();
+          this.audioElements.forEach((audio) => {
+            this.fadeVolume(audio, 0, 450, true);
+          });
           updateMusicUI(false);
         }
 
@@ -1361,7 +1222,7 @@
         }
       }
 
-      const musicEngine = new ScrollReactiveWeddingAudio();
+      const musicEngine = new ScrollReactiveMP3Player();
       const musicToggleBtn = document.getElementById('musicToggleBtn');
       const eqBars = document.getElementById('eqBars');
       const currentTrackTitle = document.getElementById('currentTrackTitle');
